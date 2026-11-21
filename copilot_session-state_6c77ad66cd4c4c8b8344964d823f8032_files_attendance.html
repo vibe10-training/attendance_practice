@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>출석체크</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f5f8f7; color: #23332f; font-family: sans-serif; }
+    main { max-width: 900px; margin: auto; padding: 28px 16px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    h1 { margin: 0; font-size: 24px; }
+    p { color: #73827d; font-size: 14px; }
+    section { background: white; border: 1px solid #e4ece8; border-radius: 12px; padding: 20px; margin-top: 16px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .stat { background: #f2faf7; border-radius: 10px; padding: 15px; }
+    .stat span, .stat strong { display: block; }
+    .stat span { color: #73827d; font-size: 13px; }
+    .stat strong { margin-top: 8px; font-size: 22px; }
+    h2 { font-size: 17px; margin: 0 0 14px; }
+    button, input, select { font: inherit; border-radius: 8px; padding: 10px; }
+    input, select { border: 1px solid #dce5e1; background: white; color: #23332f; }
+    button { border: 0; background: #159d80; color: white; cursor: pointer; }
+    button:hover { background: #0e8069; }
+    form { display: flex; gap: 8px; flex-wrap: wrap; }
+    form input { flex: 1; min-width: 120px; }
+    .row { display: flex; align-items: center; gap: 10px; border-top: 1px solid #edf2ef; padding: 12px 0; }
+    .name { flex: 1; overflow-wrap: anywhere; }
+    .delete { background: #f8eeee; color: #b94b4b; }
+    .delete:hover { background: #f3dddd; }
+    .empty { color: #83908b; font-size: 14px; }
+    .note { color: #73827d; font-size: 12px; line-height: 1.6; }
+    @media (max-width: 500px) { .stats { grid-template-columns: repeat(2, 1fr); } .row { flex-wrap: wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><div><h1>출석체크</h1><p>날짜별 출석 현황을 관리하세요</p></div></header>
+  <section>
+    <h2>날짜 선택</h2>
+    <input type="date" id="date" aria-label="출석 날짜">
+    <p class="note">출석 상태는 선택한 날짜에 자동으로 저장됩니다.</p>
+  </section>
+  <section class="stats">
+    <div class="stat"><span>전체 인원</span><strong id="total">0명</strong></div>
+    <div class="stat"><span>출석</span><strong id="present">0명</strong></div>
+    <div class="stat"><span>지각</span><strong id="late">0명</strong></div>
+    <div class="stat"><span>결석</span><strong id="absent">0명</strong></div>
+  </section>
+  <section>
+    <h2>참석자 추가</h2>
+    <form id="addForm">
+      <input id="name" placeholder="이름" maxlength="40" required aria-label="이름">
+      <button type="submit">추가</button>
+    </form>
+  </section>
+  <section>
+    <h2>출석 관리</h2>
+    <div id="list"></div>
+    <p class="note">참석자 삭제 시 해당 참석자의 모든 날짜 기록도 삭제됩니다. 데이터는 이 브라우저에만 저장됩니다.</p>
+  </section>
+</main>
+<script>
+  const key = "simple-attendance-v1";
+  const date = document.getElementById("date");
+  const list = document.getElementById("list");
+  let data;
+  try {
+    data = JSON.parse(localStorage.getItem(key)) || { members: [], records: {} };
+  } catch (error) {
+    alert("저장된 출석 데이터를 불러오지 못했습니다. 브라우저 저장 공간을 확인해 주세요.");
+    throw error;
+  }
+  function localDate() {
+    const now = new Date();
+    return [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("-");
+  }
+  date.value = localDate();
+  function save() {
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (error) {
+      alert("저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.");
+      throw error;
+    }
+  }
+  function render() {
+    const records = data.records[date.value] || {};
+    const counts = { present: 0, late: 0, absent: 0 };
+    list.replaceChildren();
+    if (!data.members.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "참석자를 추가해 주세요.";
+      list.append(empty);
+    }
+    for (const member of data.members) {
+      const status = records[member.id] || "";
+      if (status) counts[status]++;
+      const row = document.createElement("div");
+      row.className = "row";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = member.name;
+      const select = document.createElement("select");
+      select.setAttribute("aria-label", member.name + " 출석 상태");
+      for (const [value, label] of [["", "미확인"], ["present", "출석"], ["late", "지각"], ["absent", "결석"]]) {
+        select.add(new Option(label, value));
+      }
+      select.value = status;
+      select.addEventListener("change", () => {
+        data.records[date.value] ||= {};
+        data.records[date.value][member.id] = select.value;
+        save();
+        render();
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete";
+      remove.textContent = "삭제";
+      remove.addEventListener("click", () => {
+        if (!confirm(member.name + "님과 모든 출석 기록을 삭제할까요?")) return;
+        data.members = data.members.filter(item => item.id !== member.id);
+        for (const day of Object.values(data.records)) delete day[member.id];
+        save();
+        render();
+      });
+      row.append(name, select, remove);
+      list.append(row);
+    }
+    document.getElementById("total").textContent = data.members.length + "명";
+    for (const status of Object.keys(counts)) document.getElementById(status).textContent = counts[status] + "명";
+  }
+  document.getElementById("addForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const input = document.getElementById("name");
+    const name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    data.members.push({ id: String(Date.now()) + Math.random().toString(36).slice(2), name });
+    save();
+    input.value = "";
+    render();
+  });
+  date.addEventListener("change", render);
+  render();
+</script>
+</body>
+</html>
